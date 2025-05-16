@@ -1,0 +1,173 @@
+image: docker.private.ae/docker-app/maven:3.9.5-openjdk-21
+
+variables:
+  DOCKER_IMAGE_TAG: $CI_REGISTRY_IMAGE:$CI_COMMIT_REF_SLUG-$CI_COMMIT_SHORT_SHA
+  DOCKER_TAG_RELEASE: "$CI_COMMIT_REF_NAME-$CI_COMMIT_SHORT_SHA"
+  AZURE_TENANT_ID: $AZURE_TENANT_ID
+
+stages:
+  - build
+  - lint-helm
+  - test
+  - airgap-bundle
+  - deploy-azure
+
+.base:
+  tags:
+    - app
+
+maven-build:
+  stage: build
+  extends: 
+    - .base
+  cache:
+    policy: pull-push
+  script:
+    - mvn clean package -DskipTests=true
+  artifacts:
+    expire_in: 1d
+    paths:
+      - target/
+
+# Lint and dry-run Helm charts before deploying
+lint-helm:
+  stage: lint-helm
+  image: docker.private.ae/docker-app/azure-kubectl-helm-az:v1
+  script:
+    - set -euo pipefail
+    - cd $CI_PROJECT_DIR/helm
+    - ./lint-helm.sh
+    - helmfile -e aks -f helmfile.yaml sync --args --dry-run
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event" || $CI_COMMIT_BRANCH == "develop" || $CI_COMMIT_BRANCH == "main"'
+      when: on_success
+
+############### SAST Testing #########
+include:
+  - template: Jobs/SAST.gitlab-ci.yml
+
+semgrep-sast:
+  extends: 
+    - .base
+  stage: scan
+  rules:
+    - if: '$CI_COMMIT_REF_NAME =~ $RELEASE_BRANCH_PATTERN || $CI_COMMIT_REF_NAME == $CI_DEFAULT_BRANCH'
+  when: manual
+
+spotbugs-sast:
+  stage: scan
+  extends: 
+    - .base
+  rules:
+    - if: '$CI_COMMIT_REF_NAME =~ $RELEASE_BRANCH_PATTERN || $CI_COMMIT_REF_NAME == $CI_DEFAULT_BRANCH'
+  when: manual
+
+####### SONARQUBE configuration #####
+sonarqube-check:
+  stage: sonarqube-check
+  extends: 
+    - .base
+  variables:
+    ALLOW_EMPTY_PASSWORD: "yes"   
+    SONAR_USER_HOME: "${CI_PROJECT_DIR}/.sonar"  
+    GIT_DEPTH: "0"    
+  image: docker.private.ae/docker-app/maven:3.9.5-openjdk-21
+  script:
+    - mvn verify sonar:sonar
+  allow_failure: true
+  only:
+    - merge_requests
+
+######## Dockerize ########
+dockerize:
+  stage: bundle
+  image: docker.private.ae/docker-app/docker-hub/docker:dind
+  services:
+    - docker:dind
+  needs: ["maven-build"]
+  script:
+    - docker build -t ${DOCKER_IMAGE}:${DOCKER_TAG_RELEASE}
+    - docker push ${DOCKER_IMAGE}:${DOCKER_TAG_RELEASE}
+    - docker rmi $(docker images | grep ${DOCKER_IMAGE} | awk '{print $1 ":" $2;}') || true
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+      when: never
+    - if: '$CI_COMMIT_REF_NAME == "main"'
+      variables:
+        DOCKER_TAG_RELEASE: "$CI_COMMIT_REF_NAME-$CI_COMMIT_SHORT_SHA"
+    - if: '$CI_COMMIT_REF_NAME == "develop"'
+      variables:
+        DOCKER_TAG_RELEASE: "$CI_COMMIT_REF_NAME-$CI_COMMIT_SHORT_SHA"
+    - if: '$CI_COMMIT_REF_NAME =~ /^release-.*/'
+      when: always
+      variables:
+        DOCKER_TAG_RELEASE: "$CI_COMMIT_REF_NAME-$CI_COMMIT_SHORT_SHA"
+  extends: .base
+
+
+############## Azure Deployment stage ######################
+.deploy-azure:
+  extends: .base
+  stage: deploy-azure
+  image: docker.private.ae/docker-app/azure-kubectl-helm-az:v1
+  variables:
+    HELM_RELEASE: $CI_COMMIT_REF_SLUG-$CI_COMMIT_SHORT_SHA
+  script:
+    #   deploy new code to env
+    - echo "Logging into Azure..."
+    # Clone the helm repo if not present
+    - |
+      if [ ! -d helm ]; then
+        git clone "$HELM_REPO_URL" helm
+      fi
+    # Call the dynamic deployment script from the helm repo
+    - cd helm
+    - chmod +x deploy_aks.sh
+    - ./deploy_aks.sh --component backend-service --env "$DEPLOYMENT_ENV" --image-tag "$DOCKER_TAG_RELEASE" --namespace "$KUBE_NAMESPACE"
+
+
+airgap-docker-tar:
+  stage: airgap-bundle
+  image: docker:24.0.2-dind
+  services:
+    - docker:24.0.2-dind
+  variables:
+    DOCKER_HOST: tcp://docker:2375/
+    DOCKER_TLS_CERTDIR: ""
+  script:
+    - docker build -t backend-service:${DOCKER_TAG_RELEASE} .
+    - docker save backend-service:${DOCKER_TAG_RELEASE} -o backend-service-${DOCKER_TAG_RELEASE}.tar
+  artifacts:
+    paths:
+      - backend-service-*.tar
+    expire_in: 7d
+  rules:
+    - if: '$DEPLOYMENT_ENV == "airgap"'
+      when: always
+
+################################# Deploy to AKS Dev ##########
+
+deploy-dev-azure:
+  extends: .deploy-azure
+  environment:
+    name: azure-dev
+  variables:
+    KUBE_NAMESPACE: $AZURE_DEV_K8S_NAMESPACE
+    DEPLOYMENT_ENV: azuredev
+    HELM_REPO_URL: $HELM_REPO_URL
+  secrets:
+    AZURE_RESOURCE_GROUP:
+      vault: secret/data/azure#resource_group
+    AKS_CLUSTER_NAME:
+      vault: secret/data/azure#aks_cluster_name
+    AZURE_CLIENT_ID:
+      vault: secret/data/azure#client_id
+    AZURE_CLIENT_SECRET:
+      vault: secret/data/azure#client_secret
+    AZURE_SUBSCRIPTION_ID:
+      vault: secret/data/azure#subscription_id
+    AZURE_TENANT_ID:
+      vault: secret/data/azure#tenant_id
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "develop" || $CI_COMMIT_BRANCH =~ /^release-.*/'
+      when: on_success
