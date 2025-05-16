@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Tic-Tac-Toe</title>
+    <link rel="stylesheet" href="/css/styles.css">
+</head>
+<body>
+    <div class="container">
+        <h1>Tic-Tac-Toe</h1>
+        
+        <div class="status">
+            <% if (game.gameOver) { %>
+                <% if (game.winner === 'Draw') { %>
+                    Game ended in a draw!
+                <% } else { %>
+                    Player <%= game.winner %> wins!
+                <% } %>
+            <% } else { %>
+                Current player: <%= game.currentPlayer %>
+            <% } %>
+        </div>
+        
+        <div class="board">
+            <% for (let row = 0; row < 3; row++) { %>
+                <% for (let col = 0; col < 3; col++) { %>
+                    <form method="post" action="/move" style="width: 100px; height: 100px;">
+                        <input type="hidden" name="row" value="<%= row %>">
+                        <input type="hidden" name="col" value="<%= col %>">
+                        <button type="submit" class="cell" 
+                            <%= (game.board[row][col] !== '' || game.gameOver) ? 'disabled' : '' %>
+                            style="width: 100%; height: 100%; border: none;">
+                            <%= game.board[row][col] %>
+                        </button>
+                    </form>
+                <% } %>
+            <% } %>
+        </div>
+        
+        <form method="post" action="/reset">
+            <button type="submit" class="reset-btn">Reset Game</button>
+        </form>
+    </div>
+
+    <!-- Client-side JavaScript -->
+    <script type="module" src="/js/client.js"></script>
+</body>
+</html>

@@ -1,0 +1,26 @@
+environments:
+  airgap:
+    values:
+      - env: airgap
+  aks:
+    values:
+      - env: aks
+
+releases:
+  - name: frontend
+    namespace: my-app
+    chart: ./frontend
+    values:
+      - ./frontend/values-{{ .Environment.Values.env }}.yaml
+
+  - name: backend-service
+    namespace: my-app
+    chart: ./backend-service
+    values:
+      - ./backend-service/values-{{ .Environment.Values.env }}.yaml
+
+  - name: postgres
+    namespace: my-app
+    chart: ./postgresql-ha
+    values:
+      - ./postgresql-ha/values-{{ .Environment.Values.env }}.yaml
