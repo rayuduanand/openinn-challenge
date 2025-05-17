@@ -4,6 +4,14 @@ terraform {
       source  = "hashicorp/azurerm"
       version = "~> 3.0"
     }
+    kubernetes = {
+      source  = "hashicorp/kubernetes"
+      version = "~> 2.20"
+    }
+    helm = {
+      source  = "hashicorp/helm"
+      version = "~> 2.9"
+    }
   }
   
   backend "azurerm" {}
@@ -15,6 +23,22 @@ provider "azurerm" {
       purge_soft_delete_on_destroy = false
       recover_soft_deleted_key_vaults = true
     }
+  }
+}
+
+provider "kubernetes" {
+  host                   = module.aks_cluster.host
+  client_certificate     = base64decode(module.aks_cluster.client_certificate)
+  client_key             = base64decode(module.aks_cluster.client_key)
+  cluster_ca_certificate = base64decode(module.aks_cluster.cluster_ca_certificate)
+}
+
+provider "helm" {
+  kubernetes {
+    host                   = module.aks_cluster.host
+    client_certificate     = base64decode(module.aks_cluster.client_certificate)
+    client_key             = base64decode(module.aks_cluster.client_key)
+    cluster_ca_certificate = base64decode(module.aks_cluster.cluster_ca_certificate)
   }
 }
 
@@ -241,6 +265,48 @@ module "aks_cluster" {
   app_gateway_id     = azurerm_application_gateway.main.id
   
   tags = local.tags
+}
+
+# Deploy monitoring stack with Helm charts
+module "monitoring" {
+  source = "../../modules/monitoring"
+  
+  # Only deploy monitoring after AKS cluster is available
+  depends_on = [module.aks_cluster]
+  
+  cluster_name        = module.aks_cluster.name
+  resource_group_name = module.aks_cluster.resource_group_name
+  namespace           = "monitoring"
+  
+  # Configure ingress settings - use Application Gateway in production
+  enable_ingress      = true
+  ingress_domain      = "${local.environment}.example.com"
+  
+  # Configure storage with higher capacity for production
+  storage_class_name  = "managed-premium"
+  
+  # Use specific chart versions for stability in production
+  prometheus_chart_version = "45.7.1"
+  loki_chart_version       = "2.9.10"
+  grafana_chart_version    = "6.52.1"
+  
+  # Additional values for production environment
+  prometheus_additional_values = <<-EOT
+    prometheus:
+      resources:
+        limits:
+          cpu: 2000m
+          memory: 4Gi
+        requests:
+          cpu: 1000m
+          memory: 2Gi
+      storageSpec:
+        volumeClaimTemplate:
+          spec:
+            resources:
+              requests:
+                storage: 100Gi
+  EOT
 }
 
 data "azurerm_client_config" "current" {}

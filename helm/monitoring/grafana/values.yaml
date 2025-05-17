@@ -1,0 +1,111 @@
+## Grafana configuration
+## Ref: https://grafana.com/docs/grafana/latest/administration/configuration/
+
+replicas: 1
+
+image:
+  repository: grafana/grafana
+  tag: latest
+  pullPolicy: IfNotPresent
+
+serviceAccount:
+  create: true
+  name: grafana
+
+## Use an existing secret for the admin user
+adminUser: admin
+adminPassword: admin  # Change this in production
+
+service:
+  type: ClusterIP
+  port: 80
+  targetPort: 3000
+  annotations: {}
+
+ingress:
+  enabled: true
+  annotations:
+    kubernetes.io/ingress.class: nginx
+    kubernetes.io/tls-acme: "true"
+  hosts:
+    - grafana.example.com  # Replace with your actual domain
+  tls:
+    - secretName: grafana-tls
+      hosts:
+        - grafana.example.com  # Replace with your actual domain
+
+resources:
+  limits:
+    cpu: 200m
+    memory: 256Mi
+  requests:
+    cpu: 100m
+    memory: 128Mi
+
+persistence:
+  enabled: true
+  size: 10Gi
+  storageClassName: standard
+
+## Configure grafana datasources
+## ref: https://grafana.com/docs/grafana/latest/administration/provisioning/#datasources
+datasources:
+  datasources.yaml:
+    apiVersion: 1
+    datasources:
+    - name: Prometheus
+      type: prometheus
+      url: http://prometheus-server.monitoring.svc.cluster.local
+      access: proxy
+      isDefault: true
+    - name: Loki
+      type: loki
+      url: http://loki.monitoring.svc.cluster.local:3100
+      access: proxy
+
+## Configure grafana dashboard providers
+## ref: https://grafana.com/docs/grafana/latest/administration/provisioning/#dashboards
+dashboardProviders:
+  dashboardproviders.yaml:
+    apiVersion: 1
+    providers:
+    - name: 'default'
+      orgId: 1
+      folder: ''
+      type: file
+      disableDeletion: false
+      editable: true
+      options:
+        path: /var/lib/grafana/dashboards/default
+
+## Configure grafana dashboard to import
+## ref: https://grafana.com/docs/grafana/latest/administration/provisioning/#dashboards
+dashboards:
+  default:
+    kubernetes:
+      gnetId: 10000  # Kubernetes cluster monitoring dashboard ID
+      revision: 1
+      datasource: Prometheus
+    node-exporter:
+      gnetId: 1860  # Node Exporter dashboard ID
+      revision: 23
+      datasource: Prometheus
+    loki:
+      gnetId: 12019  # Loki dashboard ID
+      revision: 1
+      datasource: Loki
+
+## Grafana's primary configuration
+## ref: https://grafana.com/docs/grafana/latest/administration/configuration/
+grafana.ini:
+  server:
+    root_url: "%(protocol)s://%(domain)s/"
+  auth:
+    disable_login_form: false
+  auth.anonymous:
+    enabled: true
+    org_role: Viewer
+  users:
+    allow_sign_up: false
+    auto_assign_org: true
+    auto_assign_org_role: Editor
