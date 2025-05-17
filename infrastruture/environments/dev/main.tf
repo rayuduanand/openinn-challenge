@@ -14,10 +14,7 @@ terraform {
     }
   }
   
-  backend "azurerm" {
-    # Backend configuration will be provided via a backend.tfvars file
-    # or environment variables
-  }
+  backend "local" {}
 }
 
 provider "azurerm" {
@@ -188,7 +185,7 @@ module "monitoring" {
   depends_on = [module.aks_cluster]
   
   cluster_name        = module.aks_cluster.name
-  resource_group_name = module.aks_cluster.resource_group_name
+  resource_group_name = "rg-aks-${local.environment}"
   namespace           = "monitoring"
   
   # Configure ingress settings
