@@ -1,0 +1,41 @@
+replicaCount: 3
+
+resources:
+  requests:
+    cpu: 200m
+    memory: 512Mi
+  limits:
+    cpu: 1
+    memory: 2Gi
+
+livenessProbe:
+  exec:
+    command:
+      - sh
+      - -c
+      - pg_isready -U postgres
+  initialDelaySeconds: 30
+  periodSeconds: 10
+
+readinessProbe:
+  exec:
+    command:
+      - sh
+      - -c
+      - pg_isready -U postgres
+  initialDelaySeconds: 15
+  periodSeconds: 5
+
+autoscaling:
+  enabled: false  # Typically off for DB, but leave for completeness
+  minReplicas: 3
+  maxReplicas: 5
+  targetCPUUtilizationPercentage: 70
+
+podDisruptionBudget:
+  enabled: true
+  minAvailable: 1
+
+securityContext:
+  runAsNonRoot: true
+  readOnlyRootFilesystem: true
