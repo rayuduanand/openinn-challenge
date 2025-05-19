@@ -1,10 +1,6 @@
-This document serves as a complete high-level and technical overview of the Azure AKS Hub-and-Spoke project. It is designed to be accessible for developers, DevOps engineers, and architects alike.
-
-Azure AKS with Terraform Hub-and-Spoke Architecture
-
 This document outlines a comprehensive infrastructure and application deployment strategy for Azure Kubernetes Service (AKS) using a hub-and-spoke network topology and Infrastructure as Code (IaC) with Terraform.
 
-Project Structure:
+📂 Project Structure
 
 openinn-challenge/
 ├── applications/           # Application source code
@@ -30,11 +26,12 @@ openinn-challenge/
 │   │   ├── dev/            # Development environment
 │   │   ├── staging/        # Staging environment
 │   │   └── prod/           # Production environment
+│   ├── deployments/        # Kubernetes deployment configurations
 │   └── .gitlab-ci.yaml     # GitLab CI/CD pipeline configuration
 └── README.md               # Project documentation
 
-#### Infrastructure Setup #############
-Infrastructure Setup:
+🚀 Infrastructure Setup
+
 Terraform Modules
 
 Key components modularized using Terraform:
@@ -49,7 +46,7 @@ Log Analytics: Centralized logging and metrics
 
 Key Vault: Centralized and secure secret management
 
-Each environment (dev, staging, prod) has its own configurations with scaling and security settings tailored to its usage
+Each environment (dev, staging, prod) has its own configurations with scaling and security settings tailored to its usage.
 
 Infrastructure Deployment Workflow
 
@@ -69,7 +66,7 @@ Apply: Apply infrastructure changes with approval gates for production
 
 Destroy: Remove infrastructure for temporary environments or cleanup
 
-#### Application Setup and Deployment #############
+🏢 Application Setup and Deployment
 
 Application Stack
 
@@ -99,13 +96,37 @@ Deploy Commands:
 # Or directly with Helmfile
 helmfile -e <environment> apply
 
-Reliability and Resilience:
+📉 Best Practices Implemented
+
+Reliability and Resilience
+
 Velero Backups: Periodic backups for both application state and AKS cluster resources
+
 Horizontal Pod Autoscaler (HPA): Automatically scales pods based on CPU/memory usage
+
 Cluster Autoscaler: Dynamically adjusts node count in AKS node pools based on workload demand
+
 Pod Disruption Budgets (PDBs): Maintains service availability during voluntary disruptions
 
-Future Improvements:
-GitOps Implementation
-Centralized Secrets Management using HashiCorp Vault
+Node Affinity:
+
+affinity:
+  nodeAffinity:
+    requiredDuringSchedulingIgnoredDuringExecution:
+      nodeSelectorTerms:
+      - matchExpressions:
+        - key: node-type
+          operator: In
+          values:
+          - application
+
+🔎 Future Improvements
+
+GitOps Implementation: Adopt GitOps using ArgoCD or Flux for declarative infrastructure and application delivery
+
+Centralized Secrets Management: Integrate with HashiCorp Vault for advanced secrets lifecycle and access policies
+
 Cost Optimization: Schedule automated AKS cluster start/stop operations during non-peak hours to reduce costs
+
+This document serves as a complete high-level and technical overview of the Azure AKS Hub-and-Spoke project. It is designed to be accessible for developers, DevOps engineers, and architects alike.
+
