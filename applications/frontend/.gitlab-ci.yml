@@ -104,19 +104,48 @@ deploy-dev-azure:
     KUBE_NAMESPACE: $AZURE_DEV_K8S_NAMESPACE
     DEPLOYMENT_ENV: azuredev
     HELM_REPO_URL: $HELM_REPO_URL
-  secrets:
-    AZURE_RESOURCE_GROUP:
-      vault: secret/data/azure#resource_group
-    AKS_CLUSTER_NAME:
-      vault: secret/data/azure#aks_cluster_name
-    AZURE_CLIENT_ID:
-      vault: secret/data/azure#client_id
-    AZURE_CLIENT_SECRET:
-      vault: secret/data/azure#client_secret
-    AZURE_SUBSCRIPTION_ID:
-      vault: secret/data/azure#subscription_id
-    AZURE_TENANT_ID:
-      vault: secret/data/azure#tenant_id
+    AZURE_RESOURCE_GROUP: $AZURE_RESOURCE_GROUP_DEV
+    AKS_CLUSTER_NAME: $AKS_CLUSTER_NAME_DEV
+    AZURE_CLIENT_ID: $AZURE_CLIENT_ID_DEV
+    AZURE_CLIENT_SECRET: $AZURE_CLIENT_SECRET_DEV
+    AZURE_SUBSCRIPTION_ID: $AZURE_SUBSCRIPTION_ID
+    AZURE_TENANT_ID: $AZURE_TENANT_ID
   rules:
-    - if: '$CI_COMMIT_BRANCH == "develop" || $CI_COMMIT_BRANCH =~ /^release-.*/'
+    - if: '$CI_COMMIT_BRANCH == "develop" 
+      when: on_success
+
+deploy-staging-azure:
+  extends: .deploy-azure
+  environment:
+    name: azure-staging
+  variables:
+    KUBE_NAMESPACE: $AZURE_DEV_K8S_NAMESPACE
+    DEPLOYMENT_ENV: azuredev
+    HELM_REPO_URL: $HELM_REPO_URL
+    AZURE_RESOURCE_GROUP: $AZURE_RESOURCE_GROUP_DEV
+    AKS_CLUSTER_NAME: $AKS_CLUSTER_NAME_DEV
+    AZURE_CLIENT_ID: $AZURE_CLIENT_ID_DEV
+    AZURE_CLIENT_SECRET: $AZURE_CLIENT_SECRET_DEV
+    AZURE_SUBSCRIPTION_ID: $AZURE_SUBSCRIPTION_ID
+    AZURE_TENANT_ID: $AZURE_TENANT_ID
+  rules:
+    - if: '$CI_COMMIT_BRANCH =~ /^staging-.*/'
+      when: on_success
+
+deploy-prod-azure:
+  extends: .deploy-azure
+  environment:
+    name: azure-staging
+  variables:
+    KUBE_NAMESPACE: $AZURE_DEV_K8S_NAMESPACE
+    DEPLOYMENT_ENV: azuredev
+    HELM_REPO_URL: $HELM_REPO_URL
+    AZURE_RESOURCE_GROUP: $AZURE_RESOURCE_GROUP_DEV
+    AKS_CLUSTER_NAME: $AKS_CLUSTER_NAME_DEV
+    AZURE_CLIENT_ID: $AZURE_CLIENT_ID_DEV
+    AZURE_CLIENT_SECRET: $AZURE_CLIENT_SECRET_DEV
+    AZURE_SUBSCRIPTION_ID: $AZURE_SUBSCRIPTION_ID
+    AZURE_TENANT_ID: $AZURE_TENANT_ID
+  rules:
+    - if: '$CI_COMMIT_BRANCH =~ /^release-.*/'
       when: on_success

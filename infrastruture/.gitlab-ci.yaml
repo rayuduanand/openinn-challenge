@@ -1,0 +1,234 @@
+---
+stages:
+  - validate
+  - security
+  - plan
+  - deploy
+
+variables:
+  REGISTRY_ENDPOINT: $CI_REGISTRY
+  TF_ROOT: ${CI_PROJECT_DIR}
+  TF_STATE_NAME: ${CI_PROJECT_PATH_SLUG}
+  TF_VAR_environment: ${ENVIRONMENT}
+  TF_IN_AUTOMATION: "true"
+  ARM_CLIENT_ID: ${ARM_CLIENT_ID}
+  ARM_CLIENT_SECRET: ${ARM_CLIENT_SECRET}
+  ARM_SUBSCRIPTION_ID: ${ARM_SUBSCRIPTION_ID}
+  ARM_TENANT_ID: ${ARM_TENANT_ID}
+  TF_STATE_RG: ${TF_STATE_RESOURCE_GROUP}
+  TF_STATE_STORAGE: ${TF_STATE_STORAGE_ACCOUNT}
+  TF_STATE_CONTAINER: ${TF_STATE_CONTAINER_NAME}
+
+image: 
+  name: hashicorp/terraform:1.6
+  entrypoint: [""]
+
+cache:
+  - key: terraform-${CI_COMMIT_REF_SLUG}
+    paths:
+      - ${TF_ROOT}/.terraform
+      - ${TF_ROOT}/**/.terraform
+
+before_script:
+  - apk add --no-cache curl jq
+  - terraform --version
+
+# Validation jobs
+.validate_template: &validate_template
+  stage: validate
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+    - if: '$CI_COMMIT_BRANCH == "main"'
+    - if: '$CI_COMMIT_BRANCH =~ /^feature\/.*/'
+    - if: '$CI_COMMIT_BRANCH =~ /^hotfix\/.*/'
+
+terraform:validate:
+  <<: *validate_template
+  script:
+    - cd ${TF_ROOT}
+    - terraform fmt -check -recursive -diff
+    - cd ${TF_ROOT}/environments/dev
+    - terraform init -backend=false
+    - terraform validate
+
+# Security scanning
+tflint:
+  stage: security
+  image: 
+    name: ${REGISTRY_ENDPOINT}/terraform-linters/tflint:v0.48
+    entrypoint: [""]
+  script:
+    - cd ${TF_ROOT}
+    - tflint --init
+    - tflint --recursive --format=junit > tflint-report.xml
+  artifacts:
+    when: always
+    reports:
+      junit: tflint-report.xml
+    expire_in: 1 week
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+    - if: '$CI_COMMIT_BRANCH == "main"'
+
+checkov:
+  stage: security
+  image: 
+    name: ${REGISTRY_ENDPOINT}/checkov:3.0
+    entrypoint: [""]
+  script:
+    - cd ${TF_ROOT}
+    - checkov -d . --framework terraform --output junitxml --output-file-path checkov-report.xml
+  artifacts:
+    when: always
+    reports:
+      junit: checkov-report.xml
+    expire_in: 1 week
+  allow_failure: true
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+    - if: '$CI_COMMIT_BRANCH == "main"'
+
+# Environment templates
+.env_template: &env_template
+  before_script:
+    - apk add --no-cache curl jq
+    - cd ${TF_ROOT}/environments/${ENVIRONMENT}
+    - terraform --version
+    - terraform init
+      -backend-config="resource_group_name=${TF_STATE_RG}"
+      -backend-config="storage_account_name=${TF_STATE_STORAGE}"
+      -backend-config="container_name=${TF_STATE_CONTAINER}"
+      -backend-config="key=${TF_STATE_NAME}-${ENVIRONMENT}.tfstate"
+  artifacts:
+    reports:
+      terraform: ${TF_ROOT}/environments/${ENVIRONMENT}/terraform.json
+    expire_in: 1 week
+
+# Development environment
+plan:dev:
+  stage: plan
+  <<: *env_template
+  variables:
+    ENVIRONMENT: dev
+  script:
+    - terraform plan -out=tfplan -detailed-exitcode
+    - terraform show -json tfplan > terraform.json
+  artifacts:
+    paths:
+      - ${TF_ROOT}/environments/dev/tfplan
+      - ${TF_ROOT}/environments/dev/terraform.json
+    expire_in: 1 week
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "main"'
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+    - if: '$ENVIRONMENT_TARGET == "dev"'
+
+deploy:dev:
+  stage: deploy
+  <<: *env_template
+  variables:
+    ENVIRONMENT: dev
+  script:
+    - terraform apply -auto-approve tfplan
+    - terraform output -json > terraform-outputs.json
+  dependencies:
+    - plan:dev
+  artifacts:
+    paths:
+      - ${TF_ROOT}/environments/dev/terraform-outputs.json
+    expire_in: 30 days
+  environment:
+    name: development
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "main"'
+      when: on_success
+    - if: '$ENVIRONMENT_TARGET == "dev"'
+      when: manual
+
+# Staging environment
+plan:staging:
+  stage: plan
+  <<: *env_template
+  variables:
+    ENVIRONMENT: staging
+  script:
+    - terraform plan -out=tfplan -detailed-exitcode
+    - terraform show -json tfplan > terraform.json
+  artifacts:
+    paths:
+      - ${TF_ROOT}/environments/staging/tfplan
+      - ${TF_ROOT}/environments/staging/terraform.json
+    expire_in: 1 week
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "main"'
+      when: on_success
+    - if: '$ENVIRONMENT_TARGET == "staging"'
+  needs:
+    - job: deploy:dev
+      optional: true
+
+deploy:staging:
+  stage: deploy
+  <<: *env_template
+  variables:
+    ENVIRONMENT: staging
+  script:
+    - terraform apply -auto-approve tfplan
+    - terraform output -json > terraform-outputs.json
+  dependencies:
+    - plan:staging
+  artifacts:
+    paths:
+      - ${TF_ROOT}/environments/staging/terraform-outputs.json
+    expire_in: 30 days
+  environment:
+    name: staging
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "main"'
+      when: manual
+    - if: '$ENVIRONMENT_TARGET == "staging"'
+      when: manual
+
+# Production environment
+plan:prod:
+  stage: plan
+  <<: *env_template
+  variables:
+    ENVIRONMENT: prod
+  script:
+    - terraform plan -out=tfplan -detailed-exitcode
+    - terraform show -json tfplan > terraform.json
+  artifacts:
+    paths:
+      - ${TF_ROOT}/environments/prod/tfplan
+      - ${TF_ROOT}/environments/prod/terraform.json
+    expire_in: 2 weeks
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "main"'
+      when: on_success
+    - if: '$ENVIRONMENT_TARGET == "prod"'
+  needs:
+    - job: deploy:staging
+      optional: true
+
+deploy:prod:
+  stage: deploy
+  <<: *env_template
+  variables:
+    ENVIRONMENT: prod
+  script:
+    - terraform apply -auto-approve tfplan
+    - terraform output -json > terraform-outputs.json
+  dependencies:
+    - plan:prod
+  artifacts:
+    paths:
+      - ${TF_ROOT}/environments/prod/terraform-outputs.json
+    expire_in: 90 days
+  environment:
+    name: production
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "main"'
+      when: manual
+    - if: '$ENVIRONMENT_TARGET == "prod"'
+      when: manual
