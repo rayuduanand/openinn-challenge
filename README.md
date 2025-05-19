@@ -120,9 +120,3 @@ helmfile -e <env> apply
 - **Cost Optimization**: Schedule automated AKS cluster start/stop for non-peak hours
 
 ---
-
-## 📄 About
-
-This document provides a high-level and technical overview of the Azure AKS Hub-and-Spoke project, designed for developers, DevOps engineers, and architects.
-
----
