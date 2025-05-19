@@ -8,6 +8,11 @@ output "prometheus_service_name" {
   value       = "prometheus-server"
 }
 
+output "postgres_exporter_service_name" {
+  description = "Name of the Postgres Exporter Kubernetes service"
+  value       = "postgres_exporter"
+}
+
 output "loki_service_name" {
   description = "Name of the Loki Kubernetes service"
   value       = "loki"

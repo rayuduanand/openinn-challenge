@@ -22,6 +22,12 @@ variable "grafana_chart_version" {
   default     = "6.52.1"  
 }
 
+variable "postgres_exporter_chart_version" {
+  description = "Version of the Postgres Exporter Helm chart to deploy"
+  type        = string
+  default     = "1.1.0"
+}
+
 variable "prometheus_additional_values" {
   description = "Additional Helm values for Prometheus"
   type        = string

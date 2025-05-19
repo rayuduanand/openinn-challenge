@@ -50,16 +50,40 @@ sonarqube-check:
   only:
     - merge_requests
 
-sast:
-  stage: sast
-  image: node:20-alpine
+############### SAST Testing #########
+include:
+  - template: Jobs/SAST.gitlab-ci.yml
+
+semgrep-sast:
+  extends: 
+    - .base
+  stage: scan
+  rules:
+    - if: '$CI_COMMIT_REF_NAME =~ $RELEASE_BRANCH_PATTERN || $CI_COMMIT_REF_NAME == $CI_DEFAULT_BRANCH'
+  when: manual
+
+spotbugs-sast:
+  stage: scan
+  extends: 
+    - .base
+  rules:
+    - if: '$CI_COMMIT_REF_NAME =~ $RELEASE_BRANCH_PATTERN || $CI_COMMIT_REF_NAME == $CI_DEFAULT_BRANCH'
+  when: manual
+
+########### Trivy Scan ###########
+trivy_scan:
+  stage: scan
+  image: docker.private.ae/docker-app/trivy:0.48.3
   script:
-    - npm ci
-    - npx eslint . || true
-    - npx npm-audit-ci --audit-level=low || true
-  allow_failure: true
-  only:
-    - merge_requests
+    - mkdir -p trivy-reports
+    - trivy image --severity HIGH,CRITICAL --format json --output trivy-reports/report.json your-image:latest
+    - trivy image --severity HIGH,CRITICAL --format template --template "@/contrib/html.tpl" --output trivy-reports/report.html your-image:latest
+  artifacts:
+    paths:
+      - trivy-reports/report.json
+      - trivy-reports/report.html
+    when: always
+    expire_in: 1 week
 
 airgap-docker-tar:
   stage: airgap-bundle
