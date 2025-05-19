@@ -1,132 +1,128 @@
-This document outlines a comprehensive infrastructure and application deployment strategy for Azure Kubernetes Service (AKS) using a hub-and-spoke network topology and Infrastructure as Code (IaC) with Terraform.
+# Azure AKS Hub-and-Spoke Project
 
-📂 Project Structure
+This repository provides a comprehensive infrastructure and application deployment strategy for **Azure Kubernetes Service (AKS)** using a **hub-and-spoke network topology** and **Infrastructure as Code (IaC)** with **Terraform**.
 
+---
+
+## 📂 Project Structure
+
+```
 openinn-challenge/
-├── applications/           # Application source code
-│   ├── backend-service/    # Backend application code
-│   └── frontend/           # Frontend application code
-├── helm/                   # Helm charts for application deployment
-│   ├── backend-service/    # Backend service Helm chart
-│   ├── frontend/           # Frontend Helm chart
-│   ├── ingress-nginx/      # Ingress controller Helm chart
-│   ├── monitoring/         # Monitoring stack (Prometheus, Grafana, etc.)
-│   ├── postgresql-ha/      # PostgreSQL HA Helm chart
-│   ├── helmfile.yaml       # Helmfile for orchestrating chart deployments
-│   └── deploy_app_aks.sh   # Deployment script for applications
-├── infrastruture/          # Infrastructure as Code (IaC)
-│   ├── modules/            # Reusable Terraform modules
-│   │   ├── aks_cluster/    # AKS cluster module
-│   │   ├── hub_network/    # Hub network module
-│   │   ├── spoke_network/  # Spoke network module
-│   │   ├── log_analytics/  # Log Analytics module
-│   │   ├── key_vault/      # Key Vault module
-│   │   └── ...             # Other infrastructure modules
-│   ├── environments/       # Environment-specific configurations
-│   │   ├── dev/            # Development environment
-│   │   ├── staging/        # Staging environment
-│   │   └── prod/           # Production environment
-│   ├── deployments/        # Kubernetes deployment configurations
-│   └── .gitlab-ci.yaml     # GitLab CI/CD pipeline configuration
-└── README.md               # Project documentation
+├── applications/              # Application source code
+│   ├── backend-service/       # Backend application code
+│   └── frontend/              # Frontend application code
+├── helm/                      # Helm charts for application deployment
+│   ├── backend-service/       # Backend service Helm chart
+│   ├── frontend/              # Frontend Helm chart
+│   ├── ingress-nginx/         # Ingress controller Helm chart
+│   ├── monitoring/            # Monitoring stack (Prometheus, Grafana, etc.)
+│   ├── postgresql-ha/         # PostgreSQL HA Helm chart
+│   ├── helmfile.yaml          # Helmfile for orchestrating chart deployments
+│   └── deploy_app_aks.sh      # Deployment script for applications
+├── infrastruture/             # Infrastructure as Code (IaC)
+│   ├── modules/               # Reusable Terraform modules
+│   │   ├── aks_cluster/       # AKS cluster module
+│   │   ├── hub_network/       # Hub network module
+│   │   ├── spoke_network/     # Spoke network module
+│   │   ├── log_analytics/     # Log Analytics module
+│   │   ├── key_vault/         # Key Vault module
+│   │   └── ...                # Other infrastructure modules
+│   ├── environments/          # Environment-specific configurations
+│   │   ├── dev/               # Development environment
+│   │   ├── staging/           # Staging environment
+│   │   └── prod/              # Production environment
+│   ├── deployments/           # Kubernetes deployment configurations
+│   └── .gitlab-ci.yaml        # GitLab CI/CD pipeline configuration
+└── README.md                  # Project documentation
+```
 
-🚀 Infrastructure Setup
+---
 
-Terraform Modules
+## 🚀 Infrastructure Setup
 
-Key components modularized using Terraform:
+### Terraform Modules
 
-Hub Network: Central VNet with Azure Firewall, Bastion Host, and Gateway Subnets
+**Key infrastructure components, modularized with Terraform:**
 
-Spoke Network: Connected AKS subnets peered to the hub
+- **Hub Network**: Central VNet with Azure Firewall, Bastion Host, Gateway Subnets
+- **Spoke Network**: AKS subnets, peered to the Hub
+- **AKS Cluster**: Managed Kubernetes with configurable node pools
+- **Log Analytics**: Centralized logging and metrics
+- **Key Vault**: Secure secret management
 
-AKS Cluster: Managed Kubernetes cluster with configurable node pools
+Each environment (`dev`, `staging`, `prod`) has tailored configuration for scaling and security.
 
-Log Analytics: Centralized logging and metrics
+---
 
-Key Vault: Centralized and secure secret management
+### 🛠️ Infrastructure Deployment Workflow
 
-Each environment (dev, staging, prod) has its own configurations with scaling and security settings tailored to its usage.
+Managed with **GitLab CI/CD**:
 
-Infrastructure Deployment Workflow
+1. **Validation**
+    - TFLint, Checkov for syntax and security validation
+2. **Sonar-check**
+    - Code quality scan via SonarQube
+3. **SAST**
+    - Static Application Security Testing
+4. **TrivyScan**
+    - Container vulnerability scanning
+5. **Plan**
+    - Generate Terraform execution plan
+6. **Apply**
+    - Apply infrastructure changes with approval gates for production
+7. **Destroy**
+    - Remove infrastructure for ephemeral environments or cleanup
 
-Managed through GitLab CI/CD:
+---
 
-Validation: Run TFLint and Checkov for syntax and security validation
+## 🏢 Application Setup & Deployment
 
-Sonar-check: Code quality scanning using SonarQube
+### Application Stack
 
-SAST: Static Application Security Testing
+- **Frontend**: Web UI
+- **Backend**: API service
+- **PostgreSQL HA**: Highly available database
+- **Ingress-NGINX**: External traffic routing
+- **Monitoring**: Prometheus, Grafana, Alertmanager
 
-TrivyScan: Container vulnerability scanning
+### Deployment Strategy
 
-Plan: Generate an execution plan to preview changes
+- **Helm Charts**: Each component has its own chart under `/helm`
+- **Helmfile**: Orchestrates multi-chart deployment (`helmfile.yaml`)
+- **Environment Values**: Values files per environment
 
-Apply: Apply infrastructure changes with approval gates for production
+#### Deploy Commands
 
-Destroy: Remove infrastructure for temporary environments or cleanup
-
-🏢 Application Setup and Deployment
-
-Application Stack
-
-Frontend: Web user interface
-
-Backend: API service
-
-PostgreSQL HA: High-availability relational database
-
-Ingress-NGINX: Handles external traffic routing
-
-Monitoring: Prometheus, Grafana, Alertmanager for observability
-
-Deployment Strategy with Helmfile
-
-Helm Charts: Each component has a chart in /helm
-
-Helmfile: Coordinates multi-chart deployment using helmfile.yaml
-
-Environment Values: Each environment has its own values config
-
-Deploy Commands:
-
-# Shell script
-./deploy_app_aks.sh <environment>
+```sh
+# Using the deployment script
+./deploy_app_aks.sh
 
 # Or directly with Helmfile
-helmfile -e <environment> apply
+helmfile -e <env> apply
+```
 
-📉 Best Practices Implemented
+---
 
-Reliability and Resilience
+## 📉 Best Practices Implemented
 
-Velero Backups: Periodic backups for both application state and AKS cluster resources
+- **Reliability & Resilience**
+    - Velero Backups: Periodic backups for application state & cluster resources
+    - Horizontal Pod Autoscaler (HPA): Scales pods based on resource usage
+    - Cluster Autoscaler: Adjusts AKS node pool size dynamically
+    - Pod Disruption Budgets (PDBs): Maintains service availability
 
-Horizontal Pod Autoscaler (HPA): Automatically scales pods based on CPU/memory usage
+---
 
-Cluster Autoscaler: Dynamically adjusts node count in AKS node pools based on workload demand
+## 🔎 Future Improvements
 
-Pod Disruption Budgets (PDBs): Maintains service availability during voluntary disruptions
+- **GitOps**: Adopt ArgoCD or Flux for declarative delivery
+- **Centralized Secrets**: Integrate HashiCorp Vault for advanced secrets management
+- **Cost Optimization**: Schedule automated AKS cluster start/stop for non-peak hours
 
-Node Affinity:
+---
 
-affinity:
-  nodeAffinity:
-    requiredDuringSchedulingIgnoredDuringExecution:
-      nodeSelectorTerms:
-      - matchExpressions:
-        - key: node-type
-          operator: In
-          values:
-          - application
+## 📄 About
 
-🔎 Future Improvements
+This document provides a high-level and technical overview of the Azure AKS Hub-and-Spoke project, designed for developers, DevOps engineers, and architects.
 
-GitOps Implementation: Adopt GitOps using ArgoCD or Flux for declarative infrastructure and application delivery
-
-Centralized Secrets Management: Integrate with HashiCorp Vault for advanced secrets lifecycle and access policies
-
-Cost Optimization: Schedule automated AKS cluster start/stop operations during non-peak hours to reduce costs
-
-This document serves as a complete high-level and technical overview of the Azure AKS Hub-and-Spoke project. It is designed to be accessible for developers, DevOps engineers, and architects alike.
-
+---
