@@ -1,0 +1,10 @@
+# macOS system files
+.DS_Store
+
+# Ignore all dotfiles...
+.*
+
+# ...but not these specific ones
+!.gitignore
+!.gitlab-ci.yml
+!.editorconfig
