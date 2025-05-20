@@ -33,7 +33,30 @@ openinn-challenge/
 │   │   └── prod/              # Production environment
 │   ├── deployments/           # Kubernetes deployment configurations
 │   └── .gitlab-ci.yaml        # GitLab CI/CD pipeline configuration
-└── README.md                  # Project documentation
+rke2-ansible/
+├── inventory/
+│   └── hosts.ini                # Inventory file with node definitions
+├── group_vars/
+│   └── all.yml                  # Global variables for all hosts
+├── playbooks/
+│   └── site.yml                 # Main playbook for deployment
+├── roles/
+│   ├── common/                  # Common setup for all nodes
+│   ├── harbor/                  # Harbor registry deployment
+│   ├── rke2/                    # RKE2 cluster deployment
+│   ├── metallb/                 # MetalLB load balancer
+│   ├── ingress/                 # Nginx ingress controller
+│   ├── longhorn/                # Longhorn storage
+│   ├── velero/                  # Velero backup solution
+│   └── monitoring/              # Prometheus, Grafana, and Loki
+└── files/                       # Airgap installation files
+    ├── charts/                  # Helm charts for airgap installation
+    ├── docker/                  # Docker installation packages
+    ├── harbor/                  # Harbor installation files
+    ├── images/                  # Container images in tar format
+    └── rke2/                    # RKE2 installation files
+    └── README.md                # RKE2 installation process documentation
+└ README.md                  # Project documentation
 ```
 
 ---
@@ -120,3 +143,23 @@ helmfile -e <env> apply
 - **Cost Optimization**: Schedule automated AKS cluster start/stop for non-peak hours
 
 ---
+## Use GitLab CI/CD
+
+Follow these simple steps to leverage GitLab CI/CD for your air-gap preparation:
+
+Clone or Push: Begin by cloning this repository to your GitLab instance, or push its contents to a new project.
+Configure Variables: Set up any required CI/CD variables in your GitLab project settings (e.g., HARBOR_URL, RKE2_VERSION, etc. - if applicable).
+Run Pipeline: Execute the CI/CD pipeline directly from your GitLab project.
+Download Artifacts: Once the pipeline successfully completes, download the generated artifacts (typically a .tar.gz archive or a structured files/ folder) from the pipeline's "Jobs" or "Pipelines" section.
+⚙️ CI/CD Workflow: Internet-Connected Environment Preparation
+The core of this solution lies within the CI/CD pipeline, specifically executing the prepare-airgap.sh script in an internet-connected environment. This script automates the collection and packaging of all required resources.
+
+Automated Preparation Steps:
+The prepare-airgap.sh script performs the following critical actions:
+
+RKE2 Binaries & Images: Downloads the necessary RKE2 Kubernetes binaries and container images for your target version.
+Harbor Offline Installer: Fetches the complete Harbor offline installer package.
+Docker Image Collection: Pulls and saves all specified Docker images required by your core services into a format suitable for air-gapped transfer.
+Helm Chart Acquisition: Downloads Helm charts for all essential core services, ensuring consistent deployment.
+Helmfile Configuration: Generates a Helmfile configuration, facilitating streamlined orchestration and deployment of charts in the air-gapped environment.
+Component Packaging: Organizes and packages all collected components into a structured directory (files/).

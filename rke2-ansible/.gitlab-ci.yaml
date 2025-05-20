@@ -1,0 +1,141 @@
+stages:
+  - lint
+  - build
+  - test
+  - package
+  - publish
+
+variables:
+  DOCKER_IMAGE_NAME: rke2-airgap-prep
+  DOCKER_REGISTRY: ${CI_REGISTRY}
+  DOCKER_IMAGE_TAG: ${CI_COMMIT_REF_SLUG}
+  DOCKER_HOST: tcp://docker:2375
+  DOCKER_TLS_CERTDIR: ""
+
+# Validate Dockerfile syntax
+lint-dockerfile:
+  stage: lint
+  image: hadolint/hadolint:latest-debian
+  script:
+    - hadolint Dockerfile
+  rules:
+    - changes:
+        - Dockerfile
+
+# Validate directory structure exists
+check-ansible-dir:
+  stage: lint
+  image: alpine:latest
+  script:
+    - if [ ! -d "rke2-ansible" ]; then echo "rke2-ansible directory not found!"; exit 1; fi
+    - if [ ! -d "rke2-ansible/inventory" ]; then echo "rke2-ansible/inventory directory not found!"; exit 1; fi
+    - if [ ! -d "rke2-ansible/group_vars" ]; then echo "rke2-ansible/group_vars directory not found!"; exit 1; fi
+    - if [ ! -d "rke2-ansible/playbooks" ]; then echo "rke2-ansible/playbooks directory not found!"; exit 1; fi
+    - if [ ! -d "rke2-ansible/roles" ]; then echo "rke2-ansible/roles directory not found!"; exit 1; fi
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+
+# Build the Docker image
+build:
+  stage: build
+  image: docker:20.10.16
+  services:
+    - docker:20.10.16-dind
+  script:
+    - echo "Building Docker image"
+    - docker login -u ${CI_REGISTRY_USER} -p ${CI_REGISTRY_PASSWORD} ${CI_REGISTRY}
+    - docker build -t ${DOCKER_REGISTRY}/${DOCKER_IMAGE_NAME}:${DOCKER_IMAGE_TAG} .
+    - docker push ${DOCKER_REGISTRY}/${DOCKER_IMAGE_NAME}:${DOCKER_IMAGE_TAG}
+    # Keep a local copy for testing
+    - docker tag ${DOCKER_REGISTRY}/${DOCKER_IMAGE_NAME}:${DOCKER_IMAGE_TAG} ${DOCKER_IMAGE_NAME}:latest
+  artifacts:
+    reports:
+      dotenv: build.env
+  rules:
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+
+# Test the built image
+test-image:
+  stage: test
+  image: docker:20.10.16
+  services:
+    - docker:20.10.16-dind
+  script:
+    - docker login -u ${CI_REGISTRY_USER} -p ${CI_REGISTRY_PASSWORD} ${CI_REGISTRY}
+    - docker pull ${DOCKER_REGISTRY}/${DOCKER_IMAGE_NAME}:${DOCKER_IMAGE_TAG}
+    # Basic tests to ensure the image works
+    - |
+      docker run --rm ${DOCKER_REGISTRY}/${DOCKER_IMAGE_NAME}:${DOCKER_IMAGE_TAG} bash -c '
+        command -v python3 &&
+        python3 --version &&
+        command -v ansible &&
+        ansible --version &&
+        command -v kubectl &&
+        kubectl version --client &&
+        command -v helm &&
+        helm version &&
+        command -v helmfile &&
+        helmfile -v &&
+        command -v docker &&
+        docker --version &&
+        command -v docker-compose &&
+        docker-compose --version &&
+        command -v curl &&
+        command -v wget &&
+        command -v ping &&
+        ls -la /workspace/rke2-ansible &&
+        ls -la /workspace/prepare-airgap.sh
+      '
+  needs:
+    - build
+  rules:
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+
+# Tag the image as latest on main branch
+publish-latest:
+  stage: publish
+  image: docker:20.10.16
+  services:
+    - docker:20.10.16-dind
+  script:
+    - docker login -u ${CI_REGISTRY_USER} -p ${CI_REGISTRY_PASSWORD} ${CI_REGISTRY}
+    - docker pull ${DOCKER_REGISTRY}/${DOCKER_IMAGE_NAME}:${DOCKER_IMAGE_TAG}
+    - docker tag ${DOCKER_REGISTRY}/${DOCKER_IMAGE_NAME}:${DOCKER_IMAGE_TAG} ${DOCKER_REGISTRY}/${DOCKER_IMAGE_NAME}:latest
+    - docker push ${DOCKER_REGISTRY}/${DOCKER_IMAGE_NAME}:latest
+  needs:
+    - test-image
+    - package-artifacts
+  rules:
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+
+# Package artifacts as a tar ball
+package-artifacts:
+  stage: package
+  image: ${DOCKER_REGISTRY}/${DOCKER_IMAGE_NAME}:${DOCKER_IMAGE_TAG}
+  services:
+    - docker:20.10.16-dind
+  variables:
+    ARTIFACTS_DIR: "artifacts"
+    ARTIFACTS_TARBALL: "rke2-airgap-artifacts.tar.gz"
+  script:
+    - mkdir -p ${ARTIFACTS_DIR}
+    - cd /workspace
+    - ./prepare-airgap.sh
+    - tar -czf ${CI_PROJECT_DIR}/${ARTIFACTS_DIR}/${ARTIFACTS_TARBALL} files/
+    - cd ${CI_PROJECT_DIR}
+    - ls -la ${ARTIFACTS_DIR}
+    - echo "Artifacts saved to ${ARTIFACTS_DIR}/${ARTIFACTS_TARBALL}"
+  artifacts:
+    paths:
+      - ${ARTIFACTS_DIR}/
+    expire_in: 1 week
+  needs:
+    - test-image
+    - package-artifacts
+  rules:
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+      when: manual
