@@ -1,0 +1,64 @@
+#!/bin/bash
+# RKE2 Installation Script for Airgap Environment
+set -e
+
+# Variables
+RKE2_VERSION="{{ rke2_version }}"
+INSTALL_PATH="/opt/rke2-artifacts"
+CONFIG_PATH="/etc/rancher/rke2"
+IMAGES_DIR="${INSTALL_PATH}/images"
+NODE_TYPE="${NODE_TYPE:-server}"
+NODE_IP="{{ node_ip }}"
+FIRST_SERVER_IP="${FIRST_SERVER_IP:-$NODE_IP}"
+
+echo "Setting up RKE2 ${NODE_TYPE} in airgap mode..."
+
+# Install RKE2
+if [ "$NODE_TYPE" = "server" ]; then
+  echo "Installing RKE2 server..."
+  
+  # For the first server, we need to install from the airgap tarball
+  if [ "$NODE_IP" = "$FIRST_SERVER_IP" ]; then
+    echo "Installing as first server node..."
+    
+    # Install RKE2 server
+    INSTALL_RKE2_ARTIFACT_PATH=${INSTALL_PATH} INSTALL_RKE2_TYPE=server sh ${INSTALL_PATH}/install.sh
+  else
+    echo "Installing as additional server node..."
+    
+    # Install RKE2 server
+    INSTALL_RKE2_ARTIFACT_PATH=${INSTALL_PATH} INSTALL_RKE2_TYPE=server sh ${INSTALL_PATH}/install.sh
+  fi
+  
+  # Enable and start RKE2 server
+  systemctl enable rke2-server.service
+  systemctl start rke2-server.service
+  
+  # Wait for server to be ready
+  echo "Waiting for RKE2 server to start..."
+  sleep 30
+  
+  # Set up kubectl
+  if [ "$NODE_IP" = "$FIRST_SERVER_IP" ]; then
+    mkdir -p ~/.kube
+    cp /etc/rancher/rke2/rke2.yaml ~/.kube/config
+    chmod 600 ~/.kube/config
+    export KUBECONFIG=~/.kube/config
+    export PATH=$PATH:/var/lib/rancher/rke2/bin
+  fi
+  
+  echo "RKE2 server installation completed!"
+else
+  echo "Installing RKE2 agent..."
+  
+  # Install RKE2 agent
+  INSTALL_RKE2_ARTIFACT_PATH=${INSTALL_PATH} INSTALL_RKE2_TYPE=agent sh ${INSTALL_PATH}/install.sh
+  
+  # Enable and start RKE2 agent
+  systemctl enable rke2-agent.service
+  systemctl start rke2-agent.service
+  
+  echo "RKE2 agent installation completed!"
+fi
+
+echo "RKE2 ${NODE_TYPE} setup complete!"

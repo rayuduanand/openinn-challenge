@@ -1,0 +1,15 @@
+mirrors:
+  docker.io:
+    endpoint:
+      - "https://harbor.local:443/v2/library/"
+  harbor.local:443:
+    endpoint:
+      - "https://harbor.local:443"
+configs:
+  "harbor.local:443":
+    auth:
+      username: admin
+      password: Harbor12345
+    tls:
+      ca_file: /etc/ssl/certs/ca-certificates.crt
+      insecure_skip_verify: false

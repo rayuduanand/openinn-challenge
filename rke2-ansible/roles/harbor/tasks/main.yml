@@ -1,0 +1,117 @@
+---
+# Tasks for Harbor registry deployment in airgap environment
+- name: Install Docker dependencies
+  apt:
+    name:
+      - apt-transport-https
+      - ca-certificates
+      - gnupg
+      - lsb-release
+    state: present
+  when: ansible_os_family == "Debian"
+
+- name: Create directory for Docker
+  file:
+    path: /etc/docker
+    state: directory
+    mode: '0755'
+
+- name: Configure Docker daemon for insecure registry
+  copy:
+    dest: /etc/docker/daemon.json
+    content: |
+      {
+        "insecure-registries": ["harbor.local:443"],
+        "log-driver": "json-file",
+        "log-opts": {
+          "max-size": "100m",
+          "max-file": "3"
+        }
+      }
+    mode: '0644'
+
+- name: Copy Docker installation package
+  copy:
+    src: "{{ playbook_dir }}/../files/docker/docker-ce.tar.gz"
+    dest: "/tmp/docker-ce.tar.gz"
+    mode: '0644'
+
+- name: Install Docker from local package
+  shell: |
+    tar -xzf /tmp/docker-ce.tar.gz -C /tmp
+    cd /tmp/docker
+    sh install.sh
+    rm -rf /tmp/docker /tmp/docker-ce.tar.gz
+  args:
+    executable: /bin/bash
+    creates: /usr/bin/docker
+
+- name: Copy Docker Compose binary
+  copy:
+    src: "{{ playbook_dir }}/../files/docker/docker-compose"
+    dest: "/usr/local/bin/docker-compose"
+    mode: '0755'
+
+- name: Create directory for Harbor
+  file:
+    path: "{{ item }}"
+    state: directory
+    mode: '0755'
+  with_items:
+    - /opt/harbor
+    - /opt/harbor/certs
+
+- name: Generate self-signed certificates for Harbor
+  shell: |
+    openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
+      -keyout /opt/harbor/certs/harbor.key \
+      -out /opt/harbor/certs/harbor.crt \
+      -subj "/CN=harbor.local" \
+      -addext "subjectAltName = DNS:harbor.local"
+  args:
+    executable: /bin/bash
+    creates: /opt/harbor/certs/harbor.crt
+
+- name: Copy Harbor certificate to trusted CA store
+  copy:
+    src: /opt/harbor/certs/harbor.crt
+    dest: /usr/local/share/ca-certificates/harbor.crt
+    remote_src: yes
+    mode: '0644'
+
+- name: Update CA certificates
+  shell: update-ca-certificates
+  args:
+    executable: /bin/bash
+
+- name: Copy Harbor offline installer
+  copy:
+    src: "{{ playbook_dir }}/../files/harbor/harbor-offline-installer-{{ harbor_version }}.tgz"
+    dest: "/tmp/harbor-offline-installer.tgz"
+    mode: '0644'
+
+- name: Extract Harrbor offline installer
+  unarchive:
+    src: /tmp/harbor-offline-installer.tgz
+    dest: /opt
+    remote_src: yes
+    creates: /opt/harbor/install.sh
+
+- name: Copy Hrbor configuration file
+  template:
+    src: harbor.yml.j2
+    dest: /opt/harbor/harbor.yml
+    mode: '0644'
+
+- name: Install Harbor
+  shell: |
+    cd /opt/harbor
+    ./install.sh 
+  args:
+    executable: /bin/bash
+    creates: /opt/harbor/common/config/registry/config.yml
+
+- name: Clean up temporary files
+  file:
+    path: /tmp/harbor-offline-installer.tgz
+    state: absent

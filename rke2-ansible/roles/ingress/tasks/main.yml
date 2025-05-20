@@ -1,0 +1,71 @@
+---
+# Tasks for Nginx Ingress Controller deployment in airgap environment
+- name: Create Ingress namespace
+  kubernetes.core.k8s:
+    state: present
+    definition:
+      apiVersion: v1
+      kind: Namespace
+      metadata:
+        name: ingress-nginx
+
+- name: Create temporary directory for Ingress Nginx Helm chart
+  file:
+    path: /tmp/ingress-nginx-chart
+    state: directory
+    mode: '0755'
+
+- name: Copy Ingress Nginx Helm chart from airgap files
+  copy:
+    src: "{{ playbook_dir }}/../files/charts/ingress-nginx-{{ ingress_nginx_version }}.tgz"
+    dest: "/tmp/ingress-nginx-chart/ingress-nginx-{{ ingress_nginx_version }}.tgz"
+    mode: '0644'
+
+- name: Deploy Nginx Ingress Controller from local Helm chart
+  kubernetes.core.helm:
+    name: ingress-nginx
+    chart_ref: "/tmp/ingress-nginx-chart/ingress-nginx-{{ ingress_nginx_version }}.tgz"
+    release_namespace: ingress-nginx
+    values:
+      controller:
+        kind: DaemonSet
+        hostNetwork: true
+        publishService:
+          enabled: false
+        service:
+          enabled: true
+          type: LoadBalancer
+          annotations:
+            metallb.universe.tf/address-pool: default-pool
+        admissionWebhooks:
+          enabled: false
+        metrics:
+          enabled: true
+        config:
+          use-forwarded-headers: "true"
+          compute-full-forwarded-for: "true"
+          use-proxy-protocol: "false"
+        resources:
+          requests:
+            cpu: 100m
+            memory: 128Mi
+          limits:
+            cpu: 500m
+            memory: 512Mi
+        image:
+          registry: harbor.local:443
+          repository: ingress-nginx/controller
+          tag: "{{ ingress_nginx_controller_tag }}"
+          digest: ""
+        admissionWebhooks:
+          patch:
+            image:
+              registry: harbor.local:443
+              repository: ingress-nginx/kube-webhook-certgen
+              tag: "{{ ingress_nginx_webhook_tag }}"
+              digest: ""
+
+- name: Clean up temporary directory
+  file:
+    path: /tmp/ingress-nginx-chart
+    state: absent

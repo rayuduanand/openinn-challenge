@@ -1,0 +1,87 @@
+---
+# Tasks for Longhorn storage deployment in airgap environment
+- name: Create Longhorn namespace
+  kubernetes.core.k8s:
+    state: present
+    definition:
+      apiVersion: v1
+      kind: Namespace
+      metadata:
+        name: longhorn-system
+
+- name: Create temporary directory for Longhorn Helm chart
+  file:
+    path: /tmp/longhorn-chart
+    state: directory
+    mode: '0755'
+
+- name: Copy Longhorn Helm chart from airgap files
+  copy:
+    src: "{{ playbook_dir }}/../files/charts/longhorn-{{ longhorn_version }}.tgz"
+    dest: "/tmp/longhorn-chart/longhorn-{{ longhorn_version }}.tgz"
+    mode: '0644'
+
+- name: Deploy Longhorn from local Helm chart
+  kubernetes.core.helm:
+    name: longhorn
+    chart_ref: "/tmp/longhorn-chart/longhorn-{{ longhorn_version }}.tgz"
+    release_namespace: longhorn-system
+    values:
+      defaultSettings:
+        defaultReplicaCount: "{{ longhorn_replica_count }}"
+        backupTarget: ""
+        createDefaultDiskLabeledNodes: true
+        defaultDataPath: "{{ longhorn_data_path }}"
+        registrySecret: ""
+        privateRegistry: "harbor.local:443"
+      persistence:
+        defaultClassReplicaCount: "{{ longhorn_replica_count }}"
+      csi:
+        attacherReplicaCount: 3
+        provisionerReplicaCount: 3
+        resizerReplicaCount: 3
+        snapshotterReplicaCount: 3
+      longhornManager:
+        tolerations:
+        - key: "node-role.kubernetes.io/control-plane"
+          operator: "Exists"
+          effect: "NoSchedule"
+        image:
+          repository: "harbor.local:443/longhorn/longhorn-manager"
+      longhornDriver:
+        tolerations:
+        - key: "node-role.kubernetes.io/control-plane"
+          operator: "Exists"
+          effect: "NoSchedule"
+      longhornUI:
+        image:
+          repository: "harbor.local:443/longhorn/longhorn-ui"
+      resources:
+        limits:
+          cpu: 500m
+          memory: 1Gi
+        requests:
+          cpu: 250m
+          memory: 256Mi
+
+- name: Set Longhorn as default StorageClass
+  kubernetes.core.k8s:
+    state: present
+    definition:
+      apiVersion: storage.k8s.io/v1
+      kind: StorageClass
+      metadata:
+        name: longhorn
+        annotations:
+          storageclass.kubernetes.io/is-default-class: "true"
+      provisioner: driver.longhorn.io
+      allowVolumeExpansion: true
+      parameters:
+        numberOfReplicas: "{{ longhorn_replica_count }}"
+        staleReplicaTimeout: "30"
+        fromBackup: ""
+
+- name: Clean up temporary directory
+  file:
+    path: /tmp/longhorn-chart
+    state: absent

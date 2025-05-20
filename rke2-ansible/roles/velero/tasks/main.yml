@@ -1,0 +1,136 @@
+---
+# Tasks for Velero backup deployment in airgap environment
+- name: Create Velero namespace
+  kubernetes.core.k8s:
+    state: present
+    definition:
+      apiVersion: v1
+      kind: Namespace
+      metadata:
+        name: velero
+
+- name: Create backup storage directory
+  file:
+    path: /mnt/backup
+    state: directory
+    mode: '0755'
+  delegate_to: "{{ groups['rke2_servers'][0] }}"
+  become: true
+
+- name: Create temporary directory for Velero Helm chart
+  file:
+    path: /tmp/velero-chart
+    state: directory
+    mode: '0755'
+
+- name: Copy Velero Helm chart from airgap files
+  copy:
+    src: "{{ playbook_dir }}/../files/charts/velero-{{ velero_version }}.tgz"
+    dest: "/tmp/velero-chart/velero-{{ velero_version }}.tgz"
+    mode: '0644'
+
+- name: Copy Velero values file
+  copy:
+    src: "files/values/velero-values.yaml"
+    dest: "/opt/helm-values/velero-values.yaml"
+    mode: '0644'
+
+- name: Deploy Velero using local Helm chart and values file
+  ansible.builtin.shell: |
+    helm upgrade --install velero /tmp/velero-chart/velero-{{ velero_version }}.tgz \
+      -n velero --create-namespace \
+      -f /opt/helm-values/velero-values.yaml
+
+- name: Copy MinIO Docker image to Harbor
+  copy:
+    src: "{{ playbook_dir }}/../files/images/minio.tar"
+    dest: "/tmp/minio.tar"
+    mode: '0644'
+  delegate_to: "{{ groups['harbor'][0] }}"
+
+- name: Load MinIO image to Harbor
+  shell: |
+    docker load -i /tmp/minio.tar
+    docker tag minio/minio:latest harbor.local:443/minio/minio:latest
+    docker push harbor.local:443/minio/minio:latest
+    rm -f /tmp/minio.tar
+  delegate_to: "{{ groups['harbor'][0] }}"
+
+- name: Deploy MinIO for Velero backups
+  kubernetes.core.k8s:
+    state: present
+    definition:
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: minio
+        namespace: velero
+      spec:
+        selector:
+          matchLabels:
+            app: minio
+        strategy:
+          type: Recreate
+        template:
+          metadata:
+            labels:
+              app: minio
+          spec:
+            containers:
+            - name: minio
+              image: harbor.local:443/minio/minio:latest
+              args:
+              - server
+              - /storage
+              env:
+              - name: MINIO_ACCESS_KEY
+                value: "minio"
+              - name: MINIO_SECRET_KEY
+                value: "minio123"
+              ports:
+              - containerPort: 9000
+              volumeMounts:
+              - name: storage
+                mountPath: /storage
+            volumes:
+            - name: storage
+              persistentVolumeClaim:
+                claimName: minio-pvc
+
+- name: Create MinIO PVC
+  kubernetes.core.k8s:
+    state: present
+    definition:
+      apiVersion: v1
+      kind: PersistentVolumeClaim
+      metadata:
+        name: minio-pvc
+        namespace: velero
+      spec:
+        accessModes:
+          - ReadWriteOnce
+        resources:
+          requests:
+            storage: 10Gi
+        storageClassName: longhorn
+
+- name: Create MinIO Service
+  kubernetes.core.k8s:
+    state: present
+    definition:
+      apiVersion: v1
+      kind: Service
+      metadata:
+        name: minio
+        namespace: velero
+      spec:
+        ports:
+        - port: 9000
+          targetPort: 9000
+        selector:
+          app: minio
+
+- name: Clean up temporary directory
+  file:
+    path: /tmp/velero-chart
+    state: absent

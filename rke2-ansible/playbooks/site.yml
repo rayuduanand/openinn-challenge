@@ -1,0 +1,36 @@
+---
+# Main playbook for RKE2 airgap deployment
+- name: Common setup for all nodes
+  hosts: all
+  roles:
+    - common
+
+- name: Deploy Harbor registry
+  hosts: harbor
+  roles:
+    - harbor
+
+- name: Deploy RKE2 servers in HA mode
+  hosts: rke2_servers
+  roles:
+    - rke2
+  vars:
+    rke2_type: server
+    rke2_server_leader: "{{ groups['rke2_servers'][0] }}"
+
+- name: Deploy RKE2 agents
+  hosts: rke2_agents
+  roles:
+    - rke2
+  vars:
+    rke2_type: agent
+    rke2_server_leader: "{{ groups['rke2_servers'][0] }}"
+
+- name: Deploy Kubernetes add-ons
+  hosts: "{{ groups['rke2_servers'][0] }}"
+  roles:
+    - metallb
+    - ingress
+    - longhorn
+    - velero
+    - monitoring

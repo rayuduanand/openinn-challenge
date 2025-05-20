@@ -1,0 +1,93 @@
+---
+# Tasks for monitoring stack deployment (Prometheus, Grafana, Loki) in airgap environment
+- name: Create monitoring namespace
+  kubernetes.core.k8s:
+    state: present
+    definition:
+      apiVersion: v1
+      kind: Namespace
+      metadata:
+        name: monitoring
+
+# Deploy Prometheus Stack
+- name: Create temporary directory for Prometheus Stack Helm chart
+  file:
+    path: /tmp/prometheus-stack-chart
+    state: directory
+    mode: '0755'
+
+- name: Copy Prometheus Stack Helm chart from airgap files
+  copy:
+    src: "{{ playbook_dir }}/../files/charts/kube-prometheus-stack-{{ prometheus_stack_version }}.tgz"
+    dest: "/tmp/prometheus-stack-chart/kube-prometheus-stack-{{ prometheus_stack_version }}.tgz"
+    mode: '0644'
+
+- name: Deploy Prometheus Stack using local chart and values file
+  ansible.builtin.shell: |
+    helm upgrade --install prometheus /tmp/prometheus-stack-chart/kube-prometheus-stack-{{ prometheus_stack_version }}.tgz \
+      -n monitoring \
+      --create-namespace \
+      -f /opt/helm-values/prometheus-values.yaml
+
+- name: Deploy Loki Stack using local chart and values file
+  ansible.builtin.shell: |
+    helm upgrade --install loki /tmp/loki-stack-chart/loki-stack-{{ loki_stack_version }}.tgz \
+      -n monitoring \
+      -f /opt/helm-values/loki-values.yaml
+
+- name: Create Grafana chart temp directory
+  file:
+    path: /tmp/grafana-chart
+    state: directory
+    mode: '0755'
+
+- name: Copy Grafana Helm chart
+  copy:
+    src: "{{ playbook_dir }}/../files/charts/grafana-{{ grafana_version }}.tgz"
+    dest: "/tmp/grafana-chart/grafana-{{ grafana_version }}.tgz"
+    mode: '0644'
+
+- name: Copy Grafana values file
+  copy:
+    src: "files/values/grafana-values.yaml"
+    dest: "/opt/helm-values/grafana-values.yaml"
+    mode: '0644'
+
+- name: Deploy Grafana using local Helm chart and values file
+  ansible.builtin.shell: |
+    helm upgrade --install grafana /tmp/grafana-chart/grafana-{{ grafana_version }}.tgz \
+      -n monitoring \
+      --create-namespace \
+      -f /opt/helm-values/grafana-values.yaml
+      
+# Configure Grafana datasource for Loki
+- name: Configure Loki datasource in Grafana
+  kubernetes.core.k8s:
+    state: present
+    definition:
+      apiVersion: v1
+      kind: ConfigMap
+      metadata:
+        name: loki-datasource
+        namespace: monitoring
+        labels:
+          grafana_datasource: "1"
+      data:
+        loki-datasource.yaml: |-
+          apiVersion: 1
+          datasources:
+          - name: Loki
+            type: loki
+            access: proxy
+            url: http://loki.monitoring.svc:3100
+            version: 1
+            editable: false
+            isDefault: false
+
+- name: Clean up temporary directories
+  file:
+    path: "{{ item }}"
+    state: absent
+  with_items:
+    - /tmp/prometheus-stack-chart
+    - /tmp/loki-stack-chart

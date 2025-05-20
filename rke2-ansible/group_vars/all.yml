@@ -1,0 +1,40 @@
+---
+# Global variables for RKE2 airgap deployment
+
+# RKE2 Configuration
+rke2_version: "v1.26.10+rke2r1"
+rke2_token: "rke2-cluster-token"
+rke2_cni: "canal"
+rke2_cluster_cidr: "10.42.0.0/16"
+rke2_service_cidr: "10.43.0.0/16"
+rke2_cluster_dns: "10.43.0.10"
+
+# Harbor Registry Configuration
+harbor_version: "v2.7.1"
+harbor_admin_password: "Harbor12345"
+harbor_hostname: "harbor.local"
+harbor_database_password: "root123"
+
+# MetalLB Configuration
+metallb_version: "0.13.10"
+metallb_address_pool: "192.168.1.200-192.168.1.250"
+
+# Ingress Configuration
+ingress_nginx_version: "4.7.1"
+
+# Longhorn Configuration
+longhorn_version: "1.5.1"
+longhorn_replica_count: 3
+longhorn_data_path: "/var/lib/longhorn"
+
+# Velero Configuration
+velero_version: "5.0.2"
+velero_backup_schedule: "0 1 * * *"  # Daily at 1 AM
+velero_backup_retention: "240h"      # 10 days
+
+# Monitoring Configuration
+prometheus_stack_version: "45.27.2"
+loki_stack_version: "2.9.11"
+grafana_admin_password: "admin"
+prometheus_retention: "7d"
+loki_retention: "168h"  # 7 days

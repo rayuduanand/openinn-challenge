@@ -1,0 +1,65 @@
+---
+# Tasks for MetalLB deployment in airgap environment
+- name: Create MetalLB namespace
+  kubernetes.core.k8s:
+    state: present
+    definition:
+      apiVersion: v1
+      kind: Namespace
+      metadata:
+        name: metallb-system
+
+- name: Create temporary directory for MetalLB Helm chart
+  file:
+    path: /tmp/metallb-chart
+    state: directory
+    mode: '0755'
+
+- name: Copy MetalLB Helm chart from airgap files
+  copy:
+    src: "{{ playbook_dir }}/../files/charts/metallb-{{ metallb_version }}.tgz"
+    dest: "/tmp/metallb-chart/metallb-{{ metallb_version }}.tgz"
+    mode: '0644'
+
+- name: Install MetalLB from local Helm chart
+  kubernetes.core.helm:
+    name: metallb
+    chart_ref: "/tmp/metallb-chart/metallb-{{ metallb_version }}.tgz"
+    release_namespace: metallb-system
+    values:
+      crds:
+        enabled: true
+      speaker:
+        frr:
+          enabled: false
+
+- name: Configure MetalLB address pool
+  kubernetes.core.k8s:
+    state: present
+    definition:
+      apiVersion: metallb.io/v1beta1
+      kind: IPAddressPool
+      metadata:
+        name: default-pool
+        namespace: metallb-system
+      spec:
+        addresses:
+          - "{{ metallb_address_pool }}"
+
+- name: Configure MetalLB L2 advertisement
+  kubernetes.core.k8s:
+    state: present
+    definition:
+      apiVersion: metallb.io/v1beta1
+      kind: L2Advertisement
+      metadata:
+        name: default-l2
+        namespace: metallb-system
+      spec:
+        ipAddressPools:
+          - default-pool
+
+- name: Clean up temporary directory
+  file:
+    path: /tmp/metallb-chart
+    state: absent

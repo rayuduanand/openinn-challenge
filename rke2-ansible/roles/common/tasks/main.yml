@@ -1,0 +1,53 @@
+---
+# Common tasks for all nodes
+- name: Update apt cache
+  apt:
+    update_cache: yes
+    cache_valid_time: 3600
+  when: ansible_os_family == "Debian"
+
+- name: Disable swap
+  shell: |
+    swapoff -a
+    sed -i '/swap/d' /etc/fstab
+  args:
+    executable: /bin/bash
+
+- name: Load required kernel modules
+  modprobe:
+    name: "{{ item }}"
+    state: present
+  with_items:
+    - br_netfilter
+    - overlay
+    - ip_vs
+    - ip_vs_rr
+    - ip_vs_wrr
+    - ip_vs_sh
+
+- name: Set kernel parameters for Kubernetes
+  sysctl:
+    name: "{{ item.key }}"
+    value: "{{ item.value }}"
+    state: present
+    reload: yes
+  with_items:
+    - { key: "net.bridge.bridge-nf-call-iptables", value: "1" }
+    - { key: "net.bridge.bridge-nf-call-ip6tables", value: "1" }
+    - { key: "net.ipv4.ip_forward", value: "1" }
+
+- name: Create directory for RKE2 airgap artifacts
+  file:
+    path: "{{ item }}"
+    state: directory
+    mode: '0755'
+  with_items:
+    - /opt/rke2-artifacts
+    - /opt/rke2-artifacts/images
+    - /etc/rancher/rke2
+
+- name: Create hosts entry for Harbor registry
+  lineinfile:
+    path: /etc/hosts
+    line: "{{ hostvars[groups['harbor'][0]]['ansible_host'] }} harbor.local"
+    state: present

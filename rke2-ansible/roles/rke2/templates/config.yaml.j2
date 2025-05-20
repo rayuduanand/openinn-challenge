@@ -1,0 +1,36 @@
+# RKE2 configuration file
+# Common configuration
+write-kubeconfig-mode: "0644"
+tls-san:
+  - "{{ node_ip }}"
+node-ip: "{{ node_ip }}"
+node-name: "{{ inventory_hostname }}"
+token: "rke2-cluster-token"
+
+# Storage configuration
+disable-cloud-controller: true
+
+# Network configuration
+cni: "canal"
+cluster-cidr: "10.42.0.0/16"
+service-cidr: "10.43.0.0/16"
+cluster-dns: "10.43.0.10"
+
+# Registry configuration
+system-default-registry: "harbor.local:443"
+private-registry: "/etc/rancher/rke2/registries.yaml"
+
+{% if rke2_type == "server" %}
+{% if inventory_hostname == rke2_server_leader %}
+# First server configuration
+cluster-init: true
+{% else %}
+# Additional server configuration
+server: https://{{ first_server_ip }}:9345
+{% endif %}
+{% endif %}
+
+{% if rke2_type == "agent" %}
+# Agent configuration
+server: https://{{ first_server_ip }}:9345
+{% endif %}

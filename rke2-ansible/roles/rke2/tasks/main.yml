@@ -1,0 +1,132 @@
+---
+# Tasks for RKE2 deployment in airgap environment
+- name: Set facts for RKE2 deployment
+  set_fact:
+    first_server_ip: "{{ hostvars[rke2_server_leader]['ansible_host'] }}"
+    node_ip: "{{ ansible_host }}"
+
+- name: Create RKE2 artifacts directory
+  file:
+    path: "{{ item }}"
+    state: directory
+    mode: '0755'
+  with_items:
+    - /opt/rke2-artifacts
+    - /opt/rke2-artifacts/bin
+    - /opt/rke2-artifacts/images
+    - /etc/rancher/rke2
+
+- name: Configure RKE2
+  template:
+    src: config.yaml.j2
+    dest: /etc/rancher/rke2/config.yaml
+    mode: '0644'
+
+- name: Configure private registry for RKE2
+  template:
+    src: registries.yaml.j2
+    dest: /etc/rancher/rke2/registries.yaml
+    mode: '0644'
+
+# Copy RKE2 airgap files to the first server
+- name: Copy RKE2 airgap installer to first server
+  copy:
+    src: "{{ playbook_dir }}/../files/rke2/rke2-{{ rke2_type }}-{{ rke2_version }}.linux-amd64.tar.gz"
+    dest: "/opt/rke2-artifacts/rke2-{{ rke2_type }}.tar.gz"
+    mode: '0644'
+
+- name: Copy RKE2 images tarball to first server
+  copy:
+    src: "{{ playbook_dir }}/../files/rke2/rke2-images.linux-amd64.tar.gz"
+    dest: "/opt/rke2-artifacts/rke2-images.tar.gz"
+    mode: '0644'
+  when: rke2_type == "server" and inventory_hostname == rke2_server_leader
+
+- name: Copy RKE2 install script
+  copy:
+    src: "{{ playbook_dir }}/../files/rke2/install.sh"
+    dest: "/opt/rke2-artifacts/install.sh"
+    mode: '0755'
+
+- name: Extract RKE2 images on first server
+  shell: |
+    mkdir -p /opt/rke2-artifacts/images
+    tar -xzf /opt/rke2-artifacts/rke2-images.tar.gz -C /opt/rke2-artifacts/images
+  args:
+    executable: /bin/bash
+    creates: /opt/rke2-artifacts/images/rke2-images.txt
+  when: rke2_type == "server" and inventory_hostname == rke2_server_leader
+
+- name: Copy RKE2 installation script
+  template:
+    src: install-rke2.sh.j2
+    dest: /tmp/install-rke2.sh
+    mode: '0755'
+
+# Install RKE2 on servers and agents
+- name: Install RKE2 server
+  shell: /tmp/install-rke2.sh
+  args:
+    executable: /bin/bash
+  environment:
+    NODE_TYPE: "{{ rke2_type }}"
+    FIRST_SERVER_IP: "{{ first_server_ip }}"
+  when: rke2_type == "server"
+
+- name: Wait for RKE2 server to be ready
+  pause:
+    seconds: 60
+  when: rke2_type == "server" and inventory_hostname == rke2_server_leader
+
+- name: Get kubeconfig from first server
+  fetch:
+    src: /etc/rancher/rke2/rke2.yaml
+    dest: "{{ playbook_dir }}/../files/kubeconfig"
+    flat: yes
+  when: rke2_type == "server" and inventory_hostname == rke2_server_leader
+
+- name: Modify kubeconfig for external access
+  replace:
+    path: "{{ playbook_dir }}/../files/kubeconfig"
+    regexp: '127.0.0.1'
+    replace: '{{ first_server_ip }}'
+  delegate_to: localhost
+  when: rke2_type == "server" and inventory_hostname == rke2_server_leader
+
+- name: Wait for additional servers to join
+  pause:
+    seconds: 30
+  when: rke2_type == "server" and inventory_hostname != rke2_server_leader
+
+- name: Install RKE2 agent
+  shell: /tmp/install-rke2.sh
+  args:
+    executable: /bin/bash
+  environment:
+    NODE_TYPE: "{{ rke2_type }}"
+    FIRST_SERVER_IP: "{{ first_server_ip }}"
+  when: rke2_type == "agent"
+
+- name: Wait for agents to join
+  pause:
+    seconds: 30
+  when: rke2_type == "agent"
+
+- name: Create kubectl symlink
+  file:
+    src: /var/lib/rancher/rke2/bin/kubectl
+    dest: /usr/local/bin/kubectl
+    state: link
+  when: rke2_type == "server" and inventory_hostname == rke2_server_leader
+
+- name: Create helm symlink
+  file:
+    src: /var/lib/rancher/rke2/bin/helm
+    dest: /usr/local/bin/helm
+    state: link
+  when: rke2_type == "server" and inventory_hostname == rke2_server_leader
+
+- name: Clean up temporary files
+  file:
+    path: /tmp/install-rke2.sh
+    state: absent

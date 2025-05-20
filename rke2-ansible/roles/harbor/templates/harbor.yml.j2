@@ -1,0 +1,79 @@
+---
+# Configuration file for Harbor
+
+# The IP address or hostname to access admin UI and registry service
+hostname: {{ harbor_hostname }}
+
+# http related config
+http:
+  # port for http, default is 80
+  port: {{ harbor_http_port }}
+
+# https related config
+https:
+  # https port for harbor, default is 443
+  port: {{ harbor_https_port }}
+  # The path of cert and key files for nginx
+  certificate: /opt/harbor/certs/harbor.crt
+  private_key: /opt/harbor/certs/harbor.key
+
+# The initial password of Harbor admin
+# It only works in first time to install harbor
+harbor_admin_password: {{ harbor_admin_password }}
+
+
+# Harbor DB configuration
+database:
+  # The password for the root user of Harbor DB
+  password: root123
+  # The maximum number of connections in the idle connection pool
+  max_idle_conns: 50
+  # The maximum number of open connections to the database
+  max_open_conns: 100
+
+# The default data volume
+data_volume: /data
+
+# Trivy configuration
+trivy:
+  # ignoreUnfixed The flag to display only fixed vulnerabilities
+  ignore_unfixed: false
+  # skipUpdate The flag to skip Trivy DB download
+  skip_update: false
+  # offline scan
+  offline_scan: true
+
+jobservice:
+  # Maximum number of job workers in job service
+  max_job_workers: 10
+
+notification:
+  # Types of notifications: webhook, slack, etc.
+  webhook:
+    # Enabled or not
+    enabled: false
+
+# Log configurations
+log:
+  # Log level: debug, info, warning, error, fatal
+  level: info
+  # Log location
+  location: /var/log/harbor
+
+# Enable internal registry
+registry:
+  # Enable content trust
+  registry_ctrl_password: RegistryCtlPassword
+  # Enable relative URLs
+  relative_urls: false
+
+# Enable chart repository
+chart:
+  # Change the value of absolute_url to enabled can enable absolute url in chart
+  absolute_url: disabled
+
+# Enable proxy cache
+proxy:
+  http_proxy:
+  https_proxy:
+  no_proxy: 127.0.0.1,localhost,.local
